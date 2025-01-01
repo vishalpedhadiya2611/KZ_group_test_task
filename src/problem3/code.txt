@@ -1,0 +1,168 @@
+1. FormattedWalletBalance Interface Optimized
+
+Original : interface FormattedWalletBalance {
+  currency: string;
+  amount: number;
+  formatted: string;
+}
+
+Modified : interface FormattedWalletBalance extends WalletBalance {
+  formatted: string;
+}
+
+Reason for Change : We already have currency and amount defined in the WalletBalance interface. So, instead of duplicating those properties in FormattedWalletBalance, i used extends to inherit those properties. This makes the code more maintainable.
+
+Impact : This change doesn’t directly affect performance but improves maintainability and reduces potential bugs in the future.
+
+2. Fixing Missing BoxProps Type
+
+Original : interface BoxProps { }
+
+Modified : interface BoxProps {
+  className?: string;
+  style?: React.CSSProperties;
+}
+
+Reason for Change : The BoxProps interface was empty in the original code. I added common props (className, style). This helps in making the component more flexible and reusable in different scenarios.
+
+Impact : This change doesn’t affect the component's re-rendering but makes it more reusable and flexible.
+
+3. Removing children Destructuring
+
+Original : const { children, ...rest } = props;
+
+Modified : const { ...rest } = props;
+
+Reason for Change : children was destructured but was never used in the component. Removing it keeps the code cleaner and more efficient.
+
+Impact: This change has no effect on the re-rendering process or performance, but it reduces unnecessary destructuring and keeps the code lean.
+
+4. Adding blockchain Property in WalletBalance Interface
+
+Original : interface WalletBalance {
+  currency: string;
+  amount: number;
+}
+Modified : interface WalletBalance {
+  blockchain: string;
+  currency: string;
+  amount: number;
+}
+Reason for Change : The original code was using balance.blockchain, but the WalletBalance interface did not have a blockchain property. Adding this key makes the WalletBalance interface complete and correctly typed.
+
+Impact : This is a bug fix, so it doesn't affect performance but prevents TypeScript errors and ensures the correctness of the code.
+
+5. Optimization of the getPriority Function
+
+Original : const getPriority = (blockchain: any): number => {
+  switch (blockchain) {
+    case 'Osmosis':
+      return 100;
+    case 'Ethereum':
+      return 50;
+    case 'Arbitrum':
+      return 30;
+    case 'Zilliqa':
+      return 20;
+    case 'Neo':
+      return 20;
+    default:
+      return -99;
+  }
+}
+Optimized : const getPriority = useCallback((blockchain: string): number => {
+  const blockchainPriorityMap: { [key: string]: number } = {
+    Osmosis: 100,
+    Ethereum: 50,
+    Arbitrum: 30,
+    Zilliqa: 20,
+    Neo: 20,
+  };
+  return blockchainPriorityMap[blockchain] ?? -99;
+}, []);
+Reason for Change : I replaced the switch statement with an object (blockchainPriorityMap) to map blockchains to priorities. This makes the function more efficient (constant time lookup instead of a series of case comparisons).
+
+Impact : The useCallback hook ensures that the getPriority function is not recreated on each render, further optimizing the component. This prevents unnecessary re-renders of the WalletPage component when the function doesn't change.
+
+Performance : This change reduces the time complexity of getPriority from O(n) (due to multiple case statements) to O(1) (constant time lookup) and ensures minimal re-creations of the function.
+
+6. Consolidating Sorting, Filtering, and Mapping in One Memoized Step
+
+Original : const sortedBalances = useMemo(() => {
+  return balances.filter((balance: WalletBalance) => {
+    const balancePriority = getPriority(balance.blockchain);
+    if (lhsPriority > -99) {
+       if (balance.amount <= 0) {
+          return true;
+       }
+    }
+    return false;
+  }).sort((lhs: WalletBalance, rhs: WalletBalance) => {
+    const leftPriority = getPriority(lhs.blockchain);
+    const rightPriority = getPriority(rhs.blockchain);
+    if (leftPriority > rightPriority) {
+      return -1;
+    } else if (rightPriority > leftPriority) {
+      return 1;
+    }
+  });
+}, [balances, prices]);
+
+Optimized : const sortedAndFormattedBalances = useMemo(() => {
+  return balances
+    .map((balance: WalletBalance) => ({
+      ...balance,
+      priority: getPriority(balance.blockchain),
+    }))
+    .filter((balance) => balance.priority > -99 && balance.amount > 0)
+    .sort((lhs, rhs) => rhs.priority - lhs.priority)
+    .map((balance: WalletBalance) => ({
+      ...balance,
+      formatted: balance.amount.toFixed(2),
+    }));
+}, [balances, getPriority]);
+
+Reason for Change : I combined the sorting, filtering, and formatting steps into a single useMemo hook. This reduces operations by calculating all the necessary values (priority, filter, sort, format) in one step, which ensures the component is optimized.
+
+Impact : This reduces the complexity of multiple useMemo hooks and ensures that the component is recomputed only when necessary.
+
+7. Optimizing Row Rendering with React.memo
+
+Original : const WalletRow: React.FC<WalletRowProps> = ({
+  amount,
+  usdValue,
+  formattedAmount,
+  className,
+}) => { 
+  component
+};
+
+Optimized : const WalletRow: React.FC<WalletRowProps> = React.memo(
+  console.log("Rendering WalletRow");
+  ({ amount, usdValue, formattedAmount, className }) => {
+    return (
+      <div className={className}>
+        <div>Currency: {formattedAmount}</div>
+        <div>Amount: {amount}</div>
+        <div>USD Value: ${usdValue.toFixed(2)}</div>
+      </div>
+    );
+  }
+);
+
+Reason for Change : React.memo was added to memoize WalletRow, ensuring that it only re-renders if the props (amount, usdValue, or formattedAmount) change. This avoids unnecessary re-renders of WalletRow when the props remain unchanged.
+
+Impact : This change reduces unnecessary re-renders of individual WalletRow components, especially when large lists of wallet balances are involved. It is a performance optimization.
+
+Component Re-renders Before and After Optimization
+
+Before Optimization component Re-renders when : The component would re-render every time the state or props changed, including below points.
+a. balances: Every time balances change (e.g., if the wallet balance updates), the component re-renders.
+b. prices: Changes in prices also cause re-renders.
+c. getPriority: Re-creations of the getPriority function due to changes in balances would also trigger re-renders.
+d. Multiple useMemo: Since we had multiple useMemo hooks for sorting, filtering, and formatting, it could cause extra renders when intermediate steps change.
+
+After Optimization : 
+a. balances: The sortedAndFormattedBalances memoization ensures that the list is only recalculated when balances or getPriority changes.
+b. prices: Only the usdValue calculation will re-render if prices change.
+c. getPriority: The function is memoized, so it only recalculates when the blockchain in balances changes. This prevents unnecessary function recalculations.
